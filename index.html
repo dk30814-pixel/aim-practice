@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Aim Practice Arena</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="game"></canvas>
+
+      <div class="hud">
+        <div class="hud__row">
+          <div class="stat">
+            <span>Score</span>
+            <strong id="score">0</strong>
+          </div>
+          <div class="stat">
+            <span>Accuracy</span>
+            <strong id="accuracy">100%</strong>
+          </div>
+          <div class="stat">
+            <span>Time</span>
+            <strong id="timer">60</strong>
+          </div>
+          <div class="stat">
+            <span>Weapon</span>
+            <strong id="weaponName">Pistol</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="crosshair" aria-hidden="true">
+        <span></span>
+        <span></span>
+      </div>
+
+      <div class="controls-panel">
+        <button id="startBtn" type="button">Start</button>
+        <button id="resetBtn" type="button">Reset</button>
+        <label>
+          Target speed
+          <input id="speedSlider" type="range" min="0.5" max="3" step="0.1" value="1.2" />
+        </label>
+      </div>
+
+      <div class="help-panel">
+        <strong>Click Start to lock aim</strong>
+        <span>WASD move, mouse aim, click shoot, E use, 1-4 change guns, Esc unlocks.</span>
+      </div>
+    </div>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
