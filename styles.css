@@ -55,8 +55,8 @@ input {
 }
 
 .stat {
-  min-width: 136px;
-  padding: 12px 14px;
+  min-width: 108px;
+  padding: 8px 10px;
   border-radius: 6px;
 }
 
@@ -65,15 +65,15 @@ input {
 .controls-panel label {
   display: block;
   color: #b8c0cc;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.35;
 }
 
 .stat strong {
   display: block;
-  margin-top: 4px;
+  margin-top: 2px;
   color: #ffffff;
-  font-size: 26px;
+  font-size: 18px;
   line-height: 1.1;
 }
 
