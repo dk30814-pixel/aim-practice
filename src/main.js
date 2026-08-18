@@ -1,4 +1,5 @@
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
+import { OBJLoader } from "https://unpkg.com/three@0.160.0/examples/jsm/loaders/OBJLoader.js";
 
 const canvas = document.querySelector("#game");
 const scoreEl = document.querySelector("#score");
@@ -36,6 +37,9 @@ const keys = new Set();
 const targets = [];
 const bullets = [];
 const interactables = [];
+const modelCache = new Map();
+const textureLoader = new THREE.TextureLoader();
+const objLoader = new OBJLoader();
 const targetZone = {
   minX: -18,
   maxX: 18,
@@ -55,10 +59,49 @@ const targetSpawnSlots = [
 ];
 
 const weapons = [
-  { name: "Pistol", key: "1", color: 0x88929e, accent: 0x20252d, fireRate: 0.28, damage: 1, spread: 0.003, recoil: 0.012 },
-  { name: "SMG", key: "2", color: 0x1f2933, accent: 0x49a3ff, fireRate: 0.085, damage: 1, spread: 0.012, recoil: 0.018 },
-  { name: "Rifle", key: "3", color: 0x394b3c, accent: 0xe0b15e, fireRate: 0.15, damage: 2, spread: 0.006, recoil: 0.02 },
-  { name: "Shotgun", key: "4", color: 0x453233, accent: 0xf07057, fireRate: 0.7, damage: 1, spread: 0.055, recoil: 0.035, pellets: 7 }
+  {
+    name: "Pistol",
+    key: "1",
+    model: "./textures/guns/Pistol/Gun.obj",
+    texture: "./textures/guns/Pistol/Gun.png",
+    fireRate: 0.28,
+    damage: 1,
+    spread: 0.003,
+    recoil: 0.012,
+    viewScale: 0.38,
+    rackScale: 0.48,
+    viewRotation: new THREE.Euler(0.08, Math.PI * 0.98, 0.02),
+    rackRotation: new THREE.Euler(0, Math.PI * 0.5, 0)
+  },
+  {
+    name: "SMG",
+    key: "2",
+    model: "./textures/guns/SMG/MP5K.obj",
+    texture: "./textures/guns/SMG/MP5K.png",
+    fireRate: 0.085,
+    damage: 1,
+    spread: 0.012,
+    recoil: 0.018,
+    viewScale: 0.18,
+    rackScale: 0.24,
+    viewRotation: new THREE.Euler(0.03, Math.PI * 0.52, 0),
+    rackRotation: new THREE.Euler(0, Math.PI * 0.5, 0)
+  },
+  {
+    name: "Rifle",
+    key: "3",
+    model: "./textures/guns/Rifle/M4A1.obj",
+    texture: "./textures/guns/Rifle/Chasieboy317.jpg",
+    automatic: true,
+    fireRate: 0.055,
+    damage: 1,
+    spread: 0.008,
+    recoil: 0.014,
+    viewScale: 0.1,
+    rackScale: 0.14,
+    viewRotation: new THREE.Euler(0.02, Math.PI * 0.5, 0),
+    rackRotation: new THREE.Euler(0, Math.PI * 0.5, 0)
+  }
 ];
 
 const state = {
@@ -71,6 +114,7 @@ const state = {
   pitch: 0,
   selectedWeapon: 0,
   nextShotAt: 0,
+  triggerHeld: false,
   spawnTimer: 0,
   targetSpeed: Number(speedSlider.value)
 };
@@ -96,6 +140,7 @@ weaponAnchor.position.set(0.42, -0.38, -0.72);
 camera.add(weaponAnchor);
 
 let weaponModel = null;
+let weaponLoadToken = 0;
 buildWorld();
 selectWeapon(0);
 resetPractice();
@@ -291,14 +336,15 @@ function createGunRack() {
   rack.add(shelf);
 
   weapons.forEach((weapon, index) => {
-    const pickup = makeGunModel(weapon, 0.78);
+    const pickup = new THREE.Group();
     pickup.position.set(index * 2.65 - 4, 0, 0);
-    pickup.rotation.set(0, Math.PI / 2, 0);
+    pickup.rotation.copy(weapon.rackRotation);
     pickup.userData.weaponIndex = index;
     pickup.userData.isPickup = true;
     pickup.userData.isInteractable = true;
     rack.add(pickup);
     interactables.push(pickup);
+    addWeaponAssetToGroup(pickup, weapon, weapon.rackScale);
 
     const label = makeTextSprite(`${weapon.key} ${weapon.name}`);
     label.position.set(index * 2.65 - 4, -1.1, 0);
@@ -323,49 +369,76 @@ function createCoverBlocks() {
   });
 }
 
-function makeGunModel(weapon, scale = 1) {
-  const group = new THREE.Group();
-  const bodyMat = new THREE.MeshStandardMaterial({ color: weapon.color, roughness: 0.48, metalness: 0.42 });
-  const accentMat = new THREE.MeshStandardMaterial({ color: weapon.accent, roughness: 0.55, metalness: 0.25 });
+async function addWeaponAssetToGroup(group, weapon, scale) {
+  try {
+    const clone = await createWeaponInstance(weapon, scale);
+    group.add(clone);
+    return clone;
+  } catch (error) {
+    console.warn(`Could not load ${weapon.name} model`, error);
+    const label = makeTextSprite(weapon.name);
+    label.scale.set(1.4, 0.4, 1);
+    group.add(label);
+    return label;
+  }
+}
 
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.18, 1.22), bodyMat);
-  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.038, 1.08, 18), bodyMat);
-  barrel.rotation.x = Math.PI / 2;
-  barrel.position.set(0, 0.045, -0.9);
+async function createWeaponInstance(weapon, scale) {
+  const model = await loadWeaponModel(weapon);
+  const clone = model.clone(true);
+  clone.scale.setScalar(scale);
+  clone.userData.weaponMesh = true;
+  return clone;
+}
 
-  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.5, 0.22), accentMat);
-  grip.position.set(0.04, -0.32, 0.33);
-  grip.rotation.x = -0.3;
-
-  const sight = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.06, 0.2), accentMat);
-  sight.position.set(0, 0.15, -0.22);
-
-  const magazine = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.5, 0.22), accentMat);
-  magazine.position.set(0, -0.31, -0.12);
-  magazine.rotation.x = 0.12;
-
-  group.add(body, barrel, grip, sight, magazine);
-
-  if (weapon.name === "Shotgun" || weapon.name === "Rifle") {
-    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.18, 0.66), accentMat);
-    stock.position.set(0, -0.02, 0.86);
-    group.add(stock);
+function loadWeaponModel(weapon) {
+  if (!modelCache.has(weapon.name)) {
+    modelCache.set(
+      weapon.name,
+      Promise.all([loadObj(weapon.model), loadTexture(weapon.texture)]).then(([object, texture]) => {
+        texture.colorSpace = THREE.SRGBColorSpace;
+        const material = new THREE.MeshStandardMaterial({
+          map: texture,
+          color: 0xffffff,
+          roughness: 0.5,
+          metalness: 0.22
+        });
+        normalizeModel(object);
+        object.traverse((child) => {
+          if (child.isMesh) {
+            child.material = material;
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
+        return object;
+      })
+    );
   }
 
-  if (weapon.name === "SMG") {
-    const foregrip = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.4, 0.14), accentMat);
-    foregrip.position.set(0, -0.27, -0.56);
-    group.add(foregrip);
-  }
+  return modelCache.get(weapon.name);
+}
 
-  group.scale.setScalar(scale);
-  group.traverse((child) => {
-    if (child.isMesh) {
-      child.castShadow = true;
-      child.receiveShadow = true;
-    }
+function loadObj(path) {
+  return new Promise((resolve, reject) => {
+    objLoader.load(path, resolve, undefined, reject);
   });
-  return group;
+}
+
+function loadTexture(path) {
+  return new Promise((resolve, reject) => {
+    textureLoader.load(path, resolve, undefined, reject);
+  });
+}
+
+function normalizeModel(object) {
+  const box = new THREE.Box3().setFromObject(object);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  const longestSide = Math.max(size.x, size.y, size.z) || 1;
+
+  object.position.sub(center);
+  object.scale.multiplyScalar(2.6 / longestSide);
 }
 
 function makeTextSprite(text) {
@@ -469,14 +542,26 @@ function spawnTarget() {
 function selectWeapon(index) {
   state.selectedWeapon = index;
   weaponNameEl.textContent = weapons[index].name;
+  weaponLoadToken += 1;
+  const token = weaponLoadToken;
 
   if (weaponModel) {
     weaponAnchor.remove(weaponModel);
+    weaponModel = null;
   }
 
-  weaponModel = makeGunModel(weapons[index], 0.52);
-  weaponModel.rotation.set(-0.05, -0.12, 0);
-  weaponAnchor.add(weaponModel);
+  createWeaponInstance(weapons[index], weapons[index].viewScale).then((model) => {
+    if (token !== weaponLoadToken) return;
+    weaponModel = model;
+    weaponModel.rotation.copy(weapons[index].viewRotation);
+    weaponAnchor.add(weaponModel);
+  }).catch((error) => {
+    console.warn(`Could not load ${weapons[index].name} model`, error);
+    if (token !== weaponLoadToken) return;
+    weaponModel = makeTextSprite(weapons[index].name);
+    weaponModel.scale.set(1.4, 0.4, 1);
+    weaponAnchor.add(weaponModel);
+  });
 }
 
 function updateHud() {
@@ -536,6 +621,13 @@ function shoot() {
   addBulletTracer();
   state.pitch += weapon.recoil;
   updateHud();
+}
+
+function updateTriggerHold() {
+  const weapon = weapons[state.selectedWeapon];
+  if (state.triggerHeld && weapon.automatic && document.pointerLockElement === canvas) {
+    shoot();
+  }
 }
 
 function getInteractableMeshes() {
@@ -692,6 +784,7 @@ function animate() {
   requestAnimationFrame(animate);
 
   updateMovement(delta);
+  updateTriggerHold();
   updateTargets(delta);
   updateBullets(delta);
 
@@ -734,7 +827,21 @@ window.addEventListener("mousedown", (event) => {
     return;
   }
   if (document.pointerLockElement === canvas) {
+    state.triggerHeld = true;
     shoot();
+  }
+});
+window.addEventListener("mouseup", (event) => {
+  if (event.button === 0) {
+    state.triggerHeld = false;
+  }
+});
+window.addEventListener("blur", () => {
+  state.triggerHeld = false;
+});
+document.addEventListener("pointerlockchange", () => {
+  if (document.pointerLockElement !== canvas) {
+    state.triggerHeld = false;
   }
 });
 window.addEventListener("mousemove", (event) => {
