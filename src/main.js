@@ -10,8 +10,8 @@ const resetBtn = document.querySelector("#resetBtn");
 const speedSlider = document.querySelector("#speedSlider");
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x11151b);
-scene.fog = new THREE.Fog(0x11151b, 32, 105);
+scene.background = new THREE.Color(0xd7b07a);
+scene.fog = new THREE.Fog(0xd0a46f, 42, 130);
 
 const camera = new THREE.PerspectiveCamera(74, window.innerWidth / window.innerHeight, 0.1, 260);
 camera.position.set(0, 1.72, 13);
@@ -19,6 +19,7 @@ camera.position.set(0, 1.72, 13);
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -35,14 +36,22 @@ const keys = new Set();
 const targets = [];
 const bullets = [];
 const interactables = [];
+const targetZone = {
+  minX: -18,
+  maxX: 18,
+  minY: 1.8,
+  maxY: 4.8,
+  minZ: -26.5,
+  maxZ: -12
+};
 const targetSpawnSlots = [
-  new THREE.Vector3(-16, 2.2, -22),
-  new THREE.Vector3(-8, 3.6, -28),
+  new THREE.Vector3(-15, 2.2, -22),
+  new THREE.Vector3(-8, 3.6, -26),
   new THREE.Vector3(0, 2.4, -25),
-  new THREE.Vector3(8, 4.1, -30),
-  new THREE.Vector3(16, 2.7, -23),
-  new THREE.Vector3(-21, 3.4, -12),
-  new THREE.Vector3(21, 3.4, -12)
+  new THREE.Vector3(8, 4.1, -26),
+  new THREE.Vector3(15, 2.7, -23),
+  new THREE.Vector3(-17, 3.4, -14),
+  new THREE.Vector3(17, 3.4, -14)
 ];
 
 const weapons = [
@@ -67,9 +76,9 @@ const state = {
 };
 
 const materials = {
-  floor: new THREE.MeshStandardMaterial({ color: 0x2a3038, roughness: 0.78, metalness: 0.08 }),
-  wall: new THREE.MeshStandardMaterial({ color: 0x38424c, roughness: 0.72 }),
-  trim: new THREE.MeshStandardMaterial({ color: 0xd7dde4, roughness: 0.42, metalness: 0.2 }),
+  floor: new THREE.MeshStandardMaterial({ color: 0xb98755, roughness: 0.88, metalness: 0.02 }),
+  wall: new THREE.MeshStandardMaterial({ color: 0xc19a68, roughness: 0.82 }),
+  trim: new THREE.MeshStandardMaterial({ color: 0xd6c2a2, roughness: 0.68, metalness: 0.04 }),
   pad: new THREE.MeshStandardMaterial({ color: 0x151a21, roughness: 0.75 }),
   target: new THREE.MeshStandardMaterial({ color: 0xf8f8f8, roughness: 0.5 }),
   targetRing: new THREE.MeshStandardMaterial({ color: 0xd13f3f, roughness: 0.55 }),
@@ -93,10 +102,12 @@ resetPractice();
 animate();
 
 function buildWorld() {
-  scene.add(new THREE.HemisphereLight(0xc9d8ff, 0x384048, 1.7));
+  applyProceduralTextures();
+  createBackdrop();
+  scene.add(new THREE.HemisphereLight(0xffefd4, 0xb6804c, 1.85));
 
-  const sun = new THREE.DirectionalLight(0xffffff, 2.4);
-  sun.position.set(14, 24, 12);
+  const sun = new THREE.DirectionalLight(0xffe2b0, 2.6);
+  sun.position.set(20, 28, 16);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   sun.shadow.camera.left = -45;
@@ -110,7 +121,7 @@ function buildWorld() {
   floor.receiveShadow = true;
   scene.add(floor);
 
-  const grid = new THREE.GridHelper(arenaSize, 28, 0x59616b, 0x3e4650);
+  const grid = new THREE.GridHelper(arenaSize, 28, 0xd9b783, 0xb88c5a);
   grid.position.y = 0.02;
   scene.add(grid);
 
@@ -127,6 +138,108 @@ function buildWorld() {
   createRangeButtons();
   createGunRack();
   createCoverBlocks();
+}
+
+function applyProceduralTextures() {
+  const sand = makeNoiseTexture({
+    base: "#ba8755",
+    flecks: ["#d3aa73", "#96683e", "#e5c28d"],
+    size: 256,
+    density: 900
+  });
+  sand.wrapS = THREE.RepeatWrapping;
+  sand.wrapT = THREE.RepeatWrapping;
+  sand.repeat.set(12, 12);
+  materials.floor.map = sand;
+  materials.floor.needsUpdate = true;
+
+  const plaster = makeNoiseTexture({
+    base: "#c29a68",
+    flecks: ["#d8b982", "#a97748", "#e4c993"],
+    size: 256,
+    density: 520
+  });
+  plaster.wrapS = THREE.RepeatWrapping;
+  plaster.wrapT = THREE.RepeatWrapping;
+  plaster.repeat.set(4, 2);
+  materials.wall.map = plaster;
+  materials.wall.needsUpdate = true;
+
+  const paleStone = makeNoiseTexture({
+    base: "#d6c2a2",
+    flecks: ["#b89c74", "#f0dfbd", "#9f835d"],
+    size: 256,
+    density: 420
+  });
+  paleStone.wrapS = THREE.RepeatWrapping;
+  paleStone.wrapT = THREE.RepeatWrapping;
+  paleStone.repeat.set(2, 2);
+  materials.trim.map = paleStone;
+  materials.trim.needsUpdate = true;
+}
+
+function makeNoiseTexture({ base, flecks, size, density }) {
+  const textureCanvas = document.createElement("canvas");
+  textureCanvas.width = size;
+  textureCanvas.height = size;
+  const ctx = textureCanvas.getContext("2d");
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, size, size);
+
+  for (let i = 0; i < density; i += 1) {
+    ctx.fillStyle = flecks[Math.floor(Math.random() * flecks.length)];
+    ctx.globalAlpha = THREE.MathUtils.randFloat(0.08, 0.22);
+    const x = Math.random() * size;
+    const y = Math.random() * size;
+    const w = THREE.MathUtils.randFloat(0.8, 4.5);
+    const h = THREE.MathUtils.randFloat(0.5, 2.8);
+    ctx.fillRect(x, y, w, h);
+  }
+
+  ctx.globalAlpha = 1;
+  const texture = new THREE.CanvasTexture(textureCanvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+function createBackdrop() {
+  const skyCanvas = document.createElement("canvas");
+  skyCanvas.width = 2048;
+  skyCanvas.height = 512;
+  const ctx = skyCanvas.getContext("2d");
+  const sky = ctx.createLinearGradient(0, 0, 0, skyCanvas.height);
+  sky.addColorStop(0, "#72a6d6");
+  sky.addColorStop(0.58, "#e6c087");
+  sky.addColorStop(1, "#b77e48");
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, skyCanvas.width, skyCanvas.height);
+
+  ctx.fillStyle = "rgba(128, 89, 52, 0.62)";
+  drawDistantRidge(ctx, skyCanvas.width, 310, 70, 0.65);
+  ctx.fillStyle = "rgba(189, 136, 78, 0.86)";
+  drawDistantRidge(ctx, skyCanvas.width, 360, 95, 0.95);
+
+  const texture = new THREE.CanvasTexture(skyCanvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const backdrop = new THREE.Mesh(
+    new THREE.CylinderGeometry(112, 112, 45, 64, 1, true),
+    new THREE.MeshBasicMaterial({ map: texture, side: THREE.BackSide })
+  );
+  backdrop.position.y = 15;
+  scene.add(backdrop);
+}
+
+function drawDistantRidge(ctx, width, baseline, height, roughness) {
+  ctx.beginPath();
+  ctx.moveTo(0, 512);
+  ctx.lineTo(0, baseline);
+  for (let x = 0; x <= width; x += 85) {
+    const y = baseline - Math.sin(x * 0.01 * roughness) * height * 0.35 - Math.random() * height;
+    ctx.lineTo(x, y);
+  }
+  ctx.lineTo(width, 512);
+  ctx.closePath();
+  ctx.fill();
 }
 
 function addWall(x, y, z, w, h, d) {
@@ -215,33 +328,33 @@ function makeGunModel(weapon, scale = 1) {
   const bodyMat = new THREE.MeshStandardMaterial({ color: weapon.color, roughness: 0.48, metalness: 0.42 });
   const accentMat = new THREE.MeshStandardMaterial({ color: weapon.accent, roughness: 0.55, metalness: 0.25 });
 
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.24, 1.3), bodyMat);
-  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 1.05, 18), bodyMat);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.18, 1.22), bodyMat);
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.038, 1.08, 18), bodyMat);
   barrel.rotation.x = Math.PI / 2;
-  barrel.position.set(0, 0.05, -0.94);
+  barrel.position.set(0, 0.045, -0.9);
 
-  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.58, 0.28), accentMat);
-  grip.position.set(0.05, -0.38, 0.34);
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.5, 0.22), accentMat);
+  grip.position.set(0.04, -0.32, 0.33);
   grip.rotation.x = -0.3;
 
-  const sight = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.08, 0.22), accentMat);
-  sight.position.set(0, 0.2, -0.22);
+  const sight = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.06, 0.2), accentMat);
+  sight.position.set(0, 0.15, -0.22);
 
-  const magazine = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.56, 0.28), accentMat);
-  magazine.position.set(0, -0.35, -0.12);
+  const magazine = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.5, 0.22), accentMat);
+  magazine.position.set(0, -0.31, -0.12);
   magazine.rotation.x = 0.12;
 
   group.add(body, barrel, grip, sight, magazine);
 
   if (weapon.name === "Shotgun" || weapon.name === "Rifle") {
-    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.22, 0.72), accentMat);
-    stock.position.set(0, -0.02, 0.92);
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.18, 0.66), accentMat);
+    stock.position.set(0, -0.02, 0.86);
     group.add(stock);
   }
 
   if (weapon.name === "SMG") {
-    const foregrip = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.48, 0.18), accentMat);
-    foregrip.position.set(0, -0.32, -0.58);
+    const foregrip = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.4, 0.14), accentMat);
+    foregrip.position.set(0, -0.27, -0.56);
     group.add(foregrip);
   }
 
@@ -316,14 +429,16 @@ function clearTargets() {
 
 function spawnTarget() {
   const slot = targetSpawnSlots[Math.floor(Math.random() * targetSpawnSlots.length)].clone();
-  slot.x += THREE.MathUtils.randFloatSpread(3.5);
-  slot.y += THREE.MathUtils.randFloatSpread(1.1);
-  slot.z += THREE.MathUtils.randFloatSpread(2);
+  slot.x = THREE.MathUtils.clamp(slot.x + THREE.MathUtils.randFloatSpread(2.4), targetZone.minX, targetZone.maxX);
+  slot.y = THREE.MathUtils.clamp(slot.y + THREE.MathUtils.randFloatSpread(0.8), targetZone.minY, targetZone.maxY);
+  slot.z = THREE.MathUtils.clamp(slot.z + THREE.MathUtils.randFloatSpread(1.4), targetZone.minZ, targetZone.maxZ);
 
   const target = new THREE.Group();
   target.position.copy(slot);
   target.userData.health = 2;
+  target.userData.baseX = slot.x;
   target.userData.baseY = slot.y;
+  target.userData.moveRange = THREE.MathUtils.randFloat(1.2, 2.7);
   target.userData.phase = Math.random() * Math.PI * 2;
   target.userData.moveAxis = Math.random() > 0.5 ? "x" : "y";
 
@@ -376,10 +491,10 @@ function shoot() {
   const weapon = weapons[state.selectedWeapon];
   if (now < state.nextShotAt) return;
   state.nextShotAt = now + weapon.fireRate;
-  state.shots += 1;
 
   const pellets = weapon.pellets ?? 1;
   let landedHit = false;
+  let usedControl = false;
   for (let i = 0; i < pellets; i += 1) {
     raycaster.setFromCamera(
       {
@@ -389,8 +504,20 @@ function shoot() {
       camera
     );
 
-    const meshes = targets.flatMap((target) => target.children.filter((child) => child.isMesh));
-    const hits = raycaster.intersectObjects(meshes, false);
+    const targetMeshes = targets.flatMap((target) => target.children.filter((child) => child.isMesh));
+    const controlMeshes = getInteractableMeshes();
+    const controlHits = raycaster.intersectObjects(controlMeshes, false);
+    const targetHits = raycaster.intersectObjects(targetMeshes, false);
+    const firstControlHit = controlHits.find((hit) => hit.distance < 60);
+    const firstTargetHit = targetHits[0];
+
+    if (firstControlHit && (!firstTargetHit || firstControlHit.distance < firstTargetHit.distance)) {
+      activateShotControl(firstControlHit.object);
+      usedControl = true;
+      break;
+    }
+
+    const hits = targetHits;
     if (hits.length > 0) {
       const target = findTargetGroup(hits[0].object);
       damageTarget(target, weapon.damage);
@@ -402,25 +529,27 @@ function shoot() {
   if (landedHit) {
     state.hits += 1;
   }
+  if (!usedControl) {
+    state.shots += 1;
+  }
 
   addBulletTracer();
   state.pitch += weapon.recoil;
   updateHud();
 }
 
-function useFocusedObject() {
-  raycaster.setFromCamera(shootRay, camera);
-  const meshes = interactables.flatMap((item) => {
+function getInteractableMeshes() {
+  return interactables.flatMap((item) => {
     const children = [];
     item.traverse((child) => {
       if (child.isMesh) children.push(child);
     });
     return children;
   });
-  const hits = raycaster.intersectObjects(meshes, false);
-  if (hits.length === 0 || hits[0].distance > 8) return;
+}
 
-  const item = findInteractableGroup(hits[0].object);
+function activateShotControl(object) {
+  const item = findInteractableGroup(object);
   if (!item) return;
 
   if (item.userData.isPickup) {
@@ -429,7 +558,22 @@ function useFocusedObject() {
 
   if (item.userData.action) {
     item.userData.action();
+    pulseInteractable(item);
   }
+}
+
+function pulseInteractable(item) {
+  item.scale.setScalar(0.92);
+  setTimeout(() => item.scale.setScalar(1), 110);
+}
+
+function useFocusedObject() {
+  raycaster.setFromCamera(shootRay, camera);
+  const meshes = getInteractableMeshes();
+  const hits = raycaster.intersectObjects(meshes, false);
+  if (hits.length === 0 || hits[0].distance > 8) return;
+
+  activateShotControl(hits[0].object);
 }
 
 function findInteractableGroup(object) {
@@ -515,9 +659,17 @@ function updateTargets(delta) {
     const phase = clock.elapsedTime * state.targetSpeed + target.userData.phase;
     const amount = Math.sin(phase) * 2.2;
     if (target.userData.moveAxis === "x") {
-      target.position.x += Math.cos(phase) * delta * state.targetSpeed * 2.7;
+      target.position.x = THREE.MathUtils.clamp(
+        target.userData.baseX + Math.sin(phase) * target.userData.moveRange,
+        targetZone.minX,
+        targetZone.maxX
+      );
     } else {
-      target.position.y = target.userData.baseY + amount * 0.22;
+      target.position.y = THREE.MathUtils.clamp(
+        target.userData.baseY + amount * 0.22,
+        targetZone.minY,
+        targetZone.maxY
+      );
     }
     target.lookAt(camera.position.x, target.position.y, camera.position.z);
   });
@@ -576,7 +728,12 @@ window.addEventListener("keydown", (event) => {
 });
 window.addEventListener("keyup", (event) => keys.delete(event.code));
 window.addEventListener("mousedown", (event) => {
-  if (event.button === 0 && document.pointerLockElement === canvas) {
+  if (event.button !== 0) return;
+  if (event.target === canvas && document.pointerLockElement !== canvas) {
+    canvas.requestPointerLock();
+    return;
+  }
+  if (document.pointerLockElement === canvas) {
     shoot();
   }
 });
