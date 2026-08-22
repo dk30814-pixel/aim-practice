@@ -65,7 +65,7 @@ input {
 .controls-panel label {
   display: block;
   color: #b8c0cc;
-  font-size: 12px;
+  font-size: 16px;
   line-height: 1.35;
 }
 
@@ -73,7 +73,7 @@ input {
   display: block;
   margin-top: 2px;
   color: #ffffff;
-  font-size: 18px;
+  font-size: 28px;
   line-height: 1.1;
 }
 

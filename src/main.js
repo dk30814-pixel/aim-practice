@@ -72,6 +72,7 @@ const state = {
   selectedWeapon: 0,
   nextShotAt: 0,
   spawnTimer: 0,
+  isShooting: false,
   targetSpeed: Number(speedSlider.value)
 };
 
@@ -83,7 +84,8 @@ const materials = {
   target: new THREE.MeshStandardMaterial({ color: 0xf8f8f8, roughness: 0.5 }),
   targetRing: new THREE.MeshStandardMaterial({ color: 0xd13f3f, roughness: 0.55 }),
   bull: new THREE.MeshStandardMaterial({ color: 0x20242b, roughness: 0.55 }),
-  bullet: new THREE.MeshBasicMaterial({ color: 0xfff1a6 })
+  bullet: new THREE.MeshBasicMaterial({ color: 0xfff1a6 }),
+  decal: new THREE.MeshBasicMaterial({ color: 0x111111, side: THREE.DoubleSide })
 };
 
 const playerRig = new THREE.Group();
@@ -301,7 +303,7 @@ function createGunRack() {
     interactables.push(pickup);
 
     const label = makeTextSprite(`${weapon.key} ${weapon.name}`);
-    label.position.set(index * 2.65 - 4, -1.1, 0);
+    label.position.set(index * 2.65 - 4, 1.1, 0); // Positioned above the gun
     label.scale.set(1.6, 0.42, 1);
     rack.add(label);
   });
@@ -328,32 +330,38 @@ function makeGunModel(weapon, scale = 1) {
   const bodyMat = new THREE.MeshStandardMaterial({ color: weapon.color, roughness: 0.48, metalness: 0.42 });
   const accentMat = new THREE.MeshStandardMaterial({ color: weapon.accent, roughness: 0.55, metalness: 0.25 });
 
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.18, 1.22), bodyMat);
+  // 1. Slim Body (Width reduced from 0.58 -> 0.22)
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.18, 1.22), bodyMat);
   const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.038, 1.08, 18), bodyMat);
   barrel.rotation.x = Math.PI / 2;
   barrel.position.set(0, 0.045, -0.9);
 
-  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.5, 0.22), accentMat);
-  grip.position.set(0.04, -0.32, 0.33);
+  // 2. Slim Grip (Width 0.18 -> 0.10, removed x-offset so it stays centered)
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.5, 0.22), accentMat);
+  grip.position.set(0, -0.32, 0.33);
   grip.rotation.x = -0.3;
 
-  const sight = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.06, 0.2), accentMat);
+  // 3. Slim Sight (Width 0.32 -> 0.12)
+  const sight = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.06, 0.2), accentMat);
   sight.position.set(0, 0.15, -0.22);
 
-  const magazine = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.5, 0.22), accentMat);
+  // 4. Slim Magazine (Width 0.18 -> 0.10)
+  const magazine = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.5, 0.22), accentMat);
   magazine.position.set(0, -0.31, -0.12);
   magazine.rotation.x = 0.12;
 
   group.add(body, barrel, grip, sight, magazine);
 
   if (weapon.name === "Shotgun" || weapon.name === "Rifle") {
-    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.18, 0.66), accentMat);
+    // 5. Slim Stock (Width 0.3 -> 0.12)
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.18, 0.66), accentMat);
     stock.position.set(0, -0.02, 0.86);
     group.add(stock);
   }
 
   if (weapon.name === "SMG") {
-    const foregrip = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.4, 0.14), accentMat);
+    // 6. Slim Foregrip (Width 0.13 -> 0.08)
+    const foregrip = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.4, 0.14), accentMat);
     foregrip.position.set(0, -0.27, -0.56);
     group.add(foregrip);
   }
@@ -608,7 +616,7 @@ function damageTarget(target, damage) {
 function addBulletTracer() {
   const geometry = new THREE.BufferGeometry().setFromPoints([
     new THREE.Vector3(0.36, -0.22, -0.72),
-    new THREE.Vector3(0.28, -0.18, -12)
+    new THREE.Vector3(0, 0, -12)
   ]);
   const line = new THREE.Line(geometry, materials.bullet);
   line.userData.life = 0.055;
@@ -691,6 +699,7 @@ function animate() {
   const delta = Math.min(clock.getDelta(), 0.05);
   requestAnimationFrame(animate);
 
+  if (state.isShooting) shoot();
   updateMovement(delta);
   updateTargets(delta);
   updateBullets(delta);
@@ -734,7 +743,13 @@ window.addEventListener("mousedown", (event) => {
     return;
   }
   if (document.pointerLockElement === canvas) {
-    shoot();
+    state.isShooting = true; // Set trigger active on hold
+  }
+});
+
+window.addEventListener("mouseup", (event) => {
+  if (event.button === 0) {
+    state.isShooting = false; // Release trigger
   }
 });
 window.addEventListener("mousemove", (event) => {
